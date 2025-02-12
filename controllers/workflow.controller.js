@@ -5,6 +5,12 @@ const require = createRequire(import.meta.url);
 const { serve } = require('@upstash/workflow/express');
 
 const REMINDERS = [7, 5, 2, 1];
+const RENEWAL_PERIODS = {
+  daily: 1,
+  weekly: 7,
+  monthly: 30,
+  yearly: 365,
+};
 
 export const sendReminders = serve(async (context) => {
   const { subscriptionId } = context.requestPayload;
@@ -12,13 +18,28 @@ export const sendReminders = serve(async (context) => {
 
   if (!subscription || subscription.status !== 'active') return;
 
-  const renewalDate = dayjs(subscription.renewalDate);
+  let renewalDate = dayjs(subscription.renewalDate);
 
   if (renewalDate.isBefore(dayjs())) {
     console.log(
       `Renewal date has passed for subscription ${subscriptionId}. Stopping workflow.`
     );
     return;
+  }
+
+  if (dayjs().isSame(renewalDate, 'day')) {
+    const period = RENEWAL_PERIODS[subscription.frequency];
+    renewalDate = renewalDate.add(period, 'day');
+
+    await Subscription.findByIdAndUpdate(subscriptionId, {
+      renewalDate: renewalDate.toDate(),
+    });
+
+    console.log(
+      `Renewal date updated for subscription ${subscriptionId} to ${renewalDate.format(
+        'YYYY-MM-DD'
+      )}`
+    );
   }
 
   for (const daysBefore of REMINDERS) {
